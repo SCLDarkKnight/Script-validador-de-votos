@@ -47,40 +47,6 @@ Funciona sin conexión: extrae el RUT de cada PDF y verifica que esté en una n�
 - **Exportar** guarda un Excel con una hoja por estado (o un CSV separado por `;`).
 - **Mover inválidos** (pide confirmación) mueve los PDF inválidos a la subcarpeta `invalidos`.
 
-### Rendimiento
-
-La aplicación envía directamente el formulario del portal (8 consultas en paralelo) en vez de controlar un navegador, y lee los PDF con PyMuPDF.
-
-| | Scripts originales | Aplicación |
-|---|---|---|
-| Tiempo por certificado | ≥ 6 s (Chrome + esperas fijas) | ~0,1 s |
-| 36 certificados | varios minutos | ~1 s |
-| Memoria | cientos de MB | ~60 MB |
-
-## Scripts originales
-
-Las primeras versiones, en Python y de línea de comandos, se conservan como referencia. La aplicación los reemplaza.
-
-> ⚠️ El portal ahora muestra el semestre en un campo separado de la vigencia. Por eso `Validación Online - Cert. Regular.py` marca como inválidos incluso certificados vigentes («No corresponde a semestre/año actual»). Usa la aplicación.
-
-**`Validación Online - Cert. Regular.py`**: valida los PDF de la carpeta `cupon` en el portal usando Chrome con Selenium.
-
-```
-pip install PyPDF2 tqdm selenium webdriver-manager beautifulsoup4
-python "Validación Online - Cert. Regular.py"
-```
-
-Pide el año y el semestre, guarda `certificados_validos.csv` y `certificados_invalidos.csv`, y mueve los inválidos a una subcarpeta `invalidos`. Requiere Google Chrome instalado.
-
-**`Validación por Excel con nómina.py`**: compara el RUT de cada PDF de la carpeta `certificados` con la columna `RUT` de `Matricula.xlsx` y anula los RUT repetidos.
-
-```
-pip install PyPDF2 pandas openpyxl
-python "Validación por Excel con nómina.py"
-```
-
-Guarda `resultados_votacion.csv` y mueve los inválidos a `certificados\invalido`. Las carpetas y nombres de archivo se cambian al final del script.
-
 ## Código fuente
 
 ```
