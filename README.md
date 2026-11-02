@@ -2,8 +2,6 @@
 
 Aplicación de escritorio para Windows que valida en lote certificados de alumno regular (PDF) de la Facultad de Ingeniería de la USACH. Pensada para votaciones y trámites del Departamento de Ingeniería Eléctrica, aunque las carreras permitidas se pueden configurar.
 
-**[⬇ Descargar `Validador de Certificados.exe`]([dist/Validador%20de%20Certificados.exe](https://github.com/SCLDarkKnight/Script-validador-de-votos/releases/tag/Versi%C3%B3n_2.0))** (Windows 10/11, ~40 MB)
-
 Es un solo archivo: no hay que instalar Python, Chrome ni nada más. Como el programa no está firmado digitalmente, la primera vez Windows puede mostrar «Windows protegió su PC». Para abrirlo igual, haz clic en **Más información → Ejecutar de todas formas**.
 
 ## Cómo se usa
