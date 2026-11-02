@@ -1,0 +1,10 @@
+# Dependencias de la aplicación (se empaquetan dentro del .exe)
+customtkinter==5.2.2
+pillow>=10.0
+pymupdf>=1.24,<2      # 2.x arrastra onnxruntime/numpy (cientos de MB) sin aportar nada aquí
+requests>=2.31
+openpyxl>=3.1
+truststore>=0.9       # usa los certificados de Windows para HTTPS (redes con proxy/inspección TLS)
+
+# Solo para compilar el .exe
+pyinstaller>=6.0
