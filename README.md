@@ -2,8 +2,6 @@
 
 Aplicación de escritorio para Windows que valida en lote certificados de alumno regular (PDF) de la Facultad de Ingeniería de la USACH. Pensada para votaciones y trámites del Departamento de Ingeniería Eléctrica, aunque las carreras permitidas se pueden configurar.
 
-**[⬇ Descargar `Validador de Certificados.exe`]([dist/Validador%20de%20Certificados.exe](https://github.com/SCLDarkKnight/Script-validador-de-votos/releases/tag/Versi%C3%B3n_2.0))** (Windows 10/11, ~40 MB)
-
 Es un solo archivo: no hay que instalar Python, Chrome ni nada más. Como el programa no está firmado digitalmente, la primera vez Windows puede mostrar «Windows protegió su PC». Para abrirlo igual, haz clic en **Más información → Ejecutar de todas formas**.
 
 ## Cómo se usa
@@ -48,40 +46,6 @@ Funciona sin conexión: extrae el RUT de cada PDF y verifica que esté en una n�
 - **Doble clic** abre el PDF. Con **clic derecho** puedes mostrarlo en su carpeta o copiar el RUT o el motivo.
 - **Exportar** guarda un Excel con una hoja por estado (o un CSV separado por `;`).
 - **Mover inválidos** (pide confirmación) mueve los PDF inválidos a la subcarpeta `invalidos`.
-
-### Rendimiento
-
-La aplicación envía directamente el formulario del portal (8 consultas en paralelo) en vez de controlar un navegador, y lee los PDF con PyMuPDF.
-
-| | Scripts originales | Aplicación |
-|---|---|---|
-| Tiempo por certificado | ≥ 6 s (Chrome + esperas fijas) | ~0,1 s |
-| 36 certificados | varios minutos | ~1 s |
-| Memoria | cientos de MB | ~60 MB |
-
-## Scripts originales
-
-Las primeras versiones, en Python y de línea de comandos, se conservan como referencia. La aplicación los reemplaza.
-
-> ⚠️ El portal ahora muestra el semestre en un campo separado de la vigencia. Por eso `Validación Online - Cert. Regular.py` marca como inválidos incluso certificados vigentes («No corresponde a semestre/año actual»). Usa la aplicación.
-
-**`Validación Online - Cert. Regular.py`**: valida los PDF de la carpeta `cupon` en el portal usando Chrome con Selenium.
-
-```
-pip install PyPDF2 tqdm selenium webdriver-manager beautifulsoup4
-python "Validación Online - Cert. Regular.py"
-```
-
-Pide el año y el semestre, guarda `certificados_validos.csv` y `certificados_invalidos.csv`, y mueve los inválidos a una subcarpeta `invalidos`. Requiere Google Chrome instalado.
-
-**`Validación por Excel con nómina.py`**: compara el RUT de cada PDF de la carpeta `certificados` con la columna `RUT` de `Matricula.xlsx` y anula los RUT repetidos.
-
-```
-pip install PyPDF2 pandas openpyxl
-python "Validación por Excel con nómina.py"
-```
-
-Guarda `resultados_votacion.csv` y mueve los inválidos a `certificados\invalido`. Las carpetas y nombres de archivo se cambian al final del script.
 
 ## Código fuente
 
