@@ -1,4 +1,4 @@
-# Validador de Certificados USACH
+# Validador de Certificados FING USACH
 
 Aplicación de escritorio para Windows que valida en lote certificados de alumno regular (PDF) de la Facultad de Ingeniería de la USACH. Pensada para votaciones y trámites del Departamento de Ingeniería Eléctrica, aunque las carreras permitidas se pueden configurar.
 
