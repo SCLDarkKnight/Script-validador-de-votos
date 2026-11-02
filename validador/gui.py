@@ -19,6 +19,7 @@ import tkinter.font as tkfont
 import traceback
 import webbrowser
 from tkinter import filedialog, messagebox, ttk
+from urllib.parse import urlsplit
 import tkinter as tk
 
 import customtkinter as ctk
@@ -162,6 +163,14 @@ def entrada(master, app, placeholder="", **kw):
     return ctk.CTkEntry(master, placeholder_text=placeholder, height=38, corner_radius=9, border_width=1,
                         fg_color=P["campo"], border_color=P["borde"], text_color=P["texto"],
                         placeholder_text_color=P["suave"], font=app.f["normal"], **kw)
+
+
+def combo(master, app, valores, **kw):
+    return ctk.CTkComboBox(master, values=valores, height=38, corner_radius=9, border_width=1, fg_color=P["campo"],
+                           border_color=P["borde"], button_color=P["borde"], button_hover_color=P["suave"],
+                           text_color=P["texto"], font=app.f["normal"], dropdown_font=app.f["normal"],
+                           dropdown_fg_color=P["panel"], dropdown_hover_color=P["hover"],
+                           dropdown_text_color=P["texto"], **kw)
 
 
 def casilla(master, app, texto, valor):
@@ -484,7 +493,7 @@ class Pagina(ctk.CTkFrame):
                 w.grid(row=fila, column=0, columnspan=columnas, sticky="ew", pady=(0, 14))
                 fila += 1
             else:
-                w.grid(row=fila, column=col, sticky="ew", pady=(0, 14), padx=(0, 16) if col == 0 else (0, 0))
+                w.grid(row=fila, column=col, sticky="new", pady=(0, 14), padx=(0, 16) if col == 0 else (0, 0))
                 col = (col + 1) % columnas
                 fila += col == 0
 
@@ -880,8 +889,9 @@ class Pagina(ctk.CTkFrame):
 class PaginaOnline(Pagina):
     clave = "online"
     titulo = "Validación online"
-    subtitulo = "Verifica cada certificado de alumno regular directamente en el portal loa.usach.cl."
+    subtitulo = "Verifica cada certificado de alumno regular directamente en el portal de la facultad."
     icono = "online"
+    OTRO_PORTAL = "Otro portal (dirección propia)"
 
     def construir_campos(self, master):
         app, f, cfg = self.app, self.app.f, self.cfg
@@ -889,14 +899,25 @@ class PaginaOnline(Pagina):
                                         "Selecciona la carpeta que contiene los PDF")
         self.sel_carpeta.set(cfg.get("online_carpeta", ""))
 
+        facultad = Campo(master, app, "Facultad que emitió los certificados", completo=False)
+        self.cmb_facultad = combo(facultad.cuerpo, app, [*online.PORTALES, self.OTRO_PORTAL], state="readonly",
+                                  command=self._elegir_facultad)
+        self.cmb_facultad.bind("<Button-1>", self.cmb_facultad._clicked)  # Abre la lista al hacer clic en el texto.
+        self.cmb_facultad.grid(row=0, column=0, sticky="ew")
+
+        portal = Campo(master, app, "Dirección del portal de validación", completo=False,
+                       ayuda="Se completa al elegir la facultad, o pega la de otro portal.")
+        self.ent_portal = entrada(portal.cuerpo, app, "https://…")
+        self.ent_portal.insert(0, cfg.get("online_portal") or online.URL_PORTAL)
+        self.ent_portal.grid(row=0, column=0, sticky="ew")
+        self.ent_portal.bind("<KeyRelease>", lambda _: self._sincronizar_portal())
+        self.ent_portal.bind("<FocusOut>", lambda _: self._sincronizar_portal())
+        self._sincronizar_portal(cfg.get("online_facultad"))
+
         hoy = datetime.date.today()
         periodo = Campo(master, app, "Periodo que deben acreditar", completo=False)
-        self.cmb_anio = ctk.CTkComboBox(
-            periodo.cuerpo, values=[str(a) for a in range(hoy.year + 1, hoy.year - 4, -1)], width=100, height=38,
-            corner_radius=9, border_width=1, fg_color=P["campo"], border_color=P["borde"],
-            button_color=P["borde"], button_hover_color=P["suave"], text_color=P["texto"], font=f["normal"],
-            dropdown_font=f["normal"], dropdown_fg_color=P["panel"], dropdown_hover_color=P["hover"],
-            dropdown_text_color=P["texto"])
+        self.cmb_anio = combo(periodo.cuerpo, app, [str(a) for a in range(hoy.year + 1, hoy.year - 4, -1)],
+                              width=100)
         self.cmb_anio.set(str(hoy.year))
         self.cmb_anio.grid(row=0, column=0, sticky="w")
         self.seg_semestre = segmentado(periodo.cuerpo, app, ["1er semestre", "2do semestre"], height=38)
@@ -923,12 +944,38 @@ class PaginaOnline(Pagina):
         self.ent_carreras = entrada(carreras.cuerpo, app, "Ej.: ELECTRIC, TELEM, (1461)")
         self.ent_carreras.insert(0, cfg.get("online_carreras", ", ".join(online.CARRERAS_POR_DEFECTO)))
         self.ent_carreras.grid(row=0, column=0, sticky="ew")
-        return [self.sel_carpeta, periodo, conexiones, carreras]
+        return [self.sel_carpeta, facultad, portal, periodo, conexiones, carreras]
+
+    def _elegir_facultad(self, valor):
+        if valor in online.PORTALES:
+            self.ent_portal.delete(0, "end")
+            self.ent_portal.insert(0, online.PORTALES[valor])
+            self._sincronizar_portal(valor)
+        else:
+            self.ent_portal.focus_set()
+            self.ent_portal.select_range(0, "end")
+
+    def _sincronizar_portal(self, preferida=None):
+        """Deja en el desplegable la facultad que corresponde a la dirección escrita y la muestra en el subtítulo."""
+        url = self.ent_portal.get().strip()
+        actual = preferida or self.cmb_facultad.get()
+        if online.PORTALES.get(actual) != url:  # Varias facultades comparten portal: se mantiene la elegida.
+            actual = next((fac for fac, u in online.PORTALES.items() if u == url), self.OTRO_PORTAL)
+        self.cmb_facultad.set(actual)
+        host = urlsplit(online.normalizar_url(url)).hostname
+        self.lbl_subtitulo.configure(
+            text=f"Verifica cada certificado de alumno regular directamente en el portal {host}." if host
+            else self.subtitulo)
 
     def leer_parametros(self):
         carpeta = self.sel_carpeta.get()
         if not os.path.isdir(carpeta):
             messagebox.showwarning(APP_NAME, "Elige una carpeta válida con los certificados PDF.", parent=self)
+            return None
+        url = online.normalizar_url(self.ent_portal.get())
+        if not url:
+            messagebox.showwarning(APP_NAME, "Elige la facultad o escribe la dirección del portal de validación "
+                                             "(por ejemplo https://loa.usach.cl/…).", parent=self)
             return None
         try:
             anio = int(self.cmb_anio.get())
@@ -941,7 +988,8 @@ class PaginaOnline(Pagina):
             "carpeta": carpeta,
             "recursivo": self.var_recursivo.get(),
             "opciones": online.OpcionesOnline(anio=anio, semestre=1 if self.seg_semestre.get().startswith("1")
-                                              else 2, carreras=carreras, conexiones=self.var_conexiones.get()),
+                                              else 2, carreras=carreras, conexiones=self.var_conexiones.get(),
+                                              url=url),
         }
 
     def ejecutar(self, rutas, params, avance, cancelado):
@@ -952,6 +1000,8 @@ class PaginaOnline(Pagina):
         self.cfg["online_carpeta"] = self.sel_carpeta.get()
         self.cfg["online_carreras"] = self.ent_carreras.get()
         self.cfg["online_conexiones"] = self.var_conexiones.get()
+        self.cfg["online_facultad"] = self.cmb_facultad.get()
+        self.cfg["online_portal"] = self.ent_portal.get().strip()
 
 
 class PaginaNomina(Pagina):

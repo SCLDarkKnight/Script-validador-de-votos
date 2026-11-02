@@ -12,11 +12,21 @@ Es un solo archivo: no hay que instalar Python, Chrome ni nada más. Como el pro
 2. Selecciona la carpeta con los PDF (marca «Incluir subcarpetas» si están repartidos en varias).
 3. Presiona **Validar**.
 
-La configuración (carpetas, carreras, tema claro u oscuro, tamaño de la ventana) se guarda entre sesiones.
+La configuración (carpetas, facultad, carreras, tema claro u oscuro, tamaño de la ventana) se guarda entre sesiones.
 
 ### Modo «Validación online»
 
-Lee el **FOLIO** y el **CÓDIGO DE VERIFICACIÓN** de cada PDF y los consulta en el [portal de validación de la Facultad](https://loa.usach.cl/intranetfing/validacion-certificado.jsp). Requiere conexión a internet. Un certificado es **válido** solo si cumple todo lo siguiente:
+Lee el **FOLIO** y el **CÓDIGO DE VERIFICACIÓN** de cada PDF y los consulta en el portal de validación de la facultad que emitió el certificado, que se elige en la configuración. Cada facultad emite el certificado desde su propia intranet y solo ese portal lo reconoce:
+
+| Facultad | Portal de validación |
+|---|---|
+| Ingeniería | [loa.usach.cl](https://loa.usach.cl/intranetfing/validacion-certificado.jsp) |
+| Administración y Economía, Derecho | [intrafae.usach.cl](https://intrafae.usach.cl/intranetv9/VerificacionCertificado) |
+| Ciencia, Ciencias Médicas, Humanidades, Química y Biología, Tecnológica, Arquitectura, Bachillerato | [baker.usach.cl](https://baker.usach.cl/siacusach2/validacion-certificado.jsp) (SAI-USACH) |
+
+Con certificados reales solo se ha probado el portal de Ingeniería. Si otro portal responde en un formato que la aplicación no reconoce, el archivo queda como **Error** y no como válido o inválido.
+
+Requiere conexión a internet. Un certificado es **válido** solo si cumple todo lo siguiente:
 
 | Regla | Motivo que se muestra si falla |
 |---|---|
@@ -98,7 +108,7 @@ python app.py
 
 Para generar el `.exe`, ejecuta `build.bat`. El script crea un entorno aislado en `%LOCALAPPDATA%\ValidadorCertificados\venv`, instala las dependencias y deja el resultado en `dist\Validador de Certificados.exe`.
 
-Para adaptarla a otra facultad, cambia `URL_PORTAL` en `validador/online.py` por la página de validación correspondiente. Si esa página muestra los datos con otras etiquetas, ajusta también `_CAMPOS` en el mismo archivo.
+Si una facultad cambia de portal, elige «Otro portal (dirección propia)» en la configuración y pega la dirección de su página de validación (la misma que se abre en el navegador). Las direcciones predefinidas están en `PORTALES`, en `validador/online.py`. Si la página muestra los datos con otras etiquetas, ajusta también `_CAMPOS` en el mismo archivo.
 
 ## Licencia
 

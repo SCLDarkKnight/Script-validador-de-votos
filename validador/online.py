@@ -1,14 +1,15 @@
 # Copyright (C) 2026 Bernhardt Gotschlich Fuentes · https://www.linkedin.com/in/bernhardt-gotschlich
 # Distribuido bajo la licencia AGPL-3.0 (ver el archivo LICENSE).
 """
-Validación online contra el portal de la Facultad de Ingeniería (loa.usach.cl).
+Validación online contra los portales de validación de certificados de la USACH.
 
 En vez de abrir Chrome con Selenium, se envía directamente el mismo formulario
 que llena el navegador (POST con folio y verificador). Es ~50 veces más rápido,
 no requiere Chrome ni ChromeDriver y consume muy poca memoria.
 
-Para otras facultades: cambiar URL_PORTAL (y, si su página es distinta, las
-etiquetas en _CAMPOS).
+Cada facultad emite el certificado desde su intranet y solo ese sistema lo
+reconoce (ver PORTALES). La dirección se elige en la configuración de la app;
+si la página de otro portal muestra los datos con otras etiquetas, ajustar _CAMPOS.
 """
 
 import html
@@ -18,6 +19,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from urllib.parse import urldefrag, urljoin, urlsplit
 
 from . import __version__
 from .core import (
@@ -25,7 +27,23 @@ from .core import (
     extraer_nombre, extraer_rut, formatear_rut, leer_texto_pdf, normalizar_clave, normalizar_rut,
 )
 
-URL_PORTAL = "https://loa.usach.cl/intranetfing/certificado/verificar-certificado-estudiante.action"
+# Intranets académicas según registro.usach.cl («Selecciona la Intranet Académica de tu Facultad»).
+_SAI_FING = "https://loa.usach.cl/intranetfing/validacion-certificado.jsp"
+_SAI_FAE = "https://intrafae.usach.cl/intranetv9/VerificacionCertificado"
+_SAI_USACH = "https://baker.usach.cl/siacusach2/validacion-certificado.jsp"
+PORTALES = {
+    "Facultad de Ingeniería": _SAI_FING,
+    "Facultad de Administración y Economía": _SAI_FAE,
+    "Facultad de Derecho": _SAI_FAE,
+    "Facultad de Ciencia": _SAI_USACH,
+    "Facultad de Ciencias Médicas": _SAI_USACH,
+    "Facultad de Humanidades": _SAI_USACH,
+    "Facultad de Química y Biología": _SAI_USACH,
+    "Facultad Tecnológica": _SAI_USACH,
+    "Escuela de Arquitectura": _SAI_USACH,
+    "Programa de Bachillerato": _SAI_USACH,
+}
+URL_PORTAL = _SAI_FING
 CARRERAS_POR_DEFECTO = ["ELECTRIC", "TELEM", "(1461)", "(1467)", "(1351)", "(1442)"]
 REINTENTOS = 3
 TIMEOUT = (6, 25)  # (conexión, lectura) en segundos
@@ -34,8 +52,18 @@ _RE_PANEL = re.compile(r'class="panel-heading"[^>]*>(.*?)</div>', re.S)
 _RE_CAMPO = re.compile(
     r'<label[^>]*control-label[^>]*>(.*?)</label>\s*<div[^>]*>\s*<p[^>]*form-control-static[^>]*>(.*?)</p>', re.S
 )
+_RE_FORM = re.compile(r"<form\b([^>]*)>(.*?)</form>", re.S | re.I)
+_RE_INPUT = re.compile(r"<input\b[^>]*>", re.I)
+_RE_ATRIBUTO = re.compile(r"""([\w.:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')""")
 _RE_TAG = re.compile(r"<[^>]+>")
 _RE_NUMERO = re.compile(r"-?\d+")
+
+# Mensajes (normalizados) con que cada portal rechaza un folio y verificador sin mostrar datos.
+_RECHAZOS = {
+    "NO HAY REGISTRO": "El portal no tiene registro de este folio y código",          # loa (Ingeniería)
+    "NO EXISTE UN DOCUMENTO": "El portal no tiene registro de este folio y código",   # baker (SAI-USACH)
+    "CERTIFICADO INVALIDO": "El portal responde «Certificado Inválido»",              # intrafae (FAE, Derecho)
+}
 
 # Etiqueta del portal (normalizada) -> clave interna
 _CAMPOS = {
@@ -59,6 +87,7 @@ class OpcionesOnline:
     semestre: int
     carreras: list = field(default_factory=lambda: list(CARRERAS_POR_DEFECTO))
     conexiones: int = 8
+    url: str = URL_PORTAL
 
 
 class ErrorPortal(Exception):
@@ -69,6 +98,33 @@ class ErrorPortal(Exception):
 
 def _limpiar(fragmento):
     return " ".join(html.unescape(_RE_TAG.sub(" ", fragmento)).split())
+
+
+def normalizar_url(texto):
+    """Agrega https:// si falta. Devuelve '' si no parece una dirección web."""
+    texto = texto.strip()
+    if texto and "://" not in texto:
+        texto = "https://" + texto
+    partes = urlsplit(texto)
+    return texto if partes.scheme in ("http", "https") and "." in (partes.hostname or "") else ""
+
+
+def _atributos(etiqueta):
+    return {m.group(1).lower(): html.unescape(m.group(2) if m.group(2) is not None else m.group(3))
+            for m in _RE_ATRIBUTO.finditer(etiqueta)}
+
+
+def buscar_formulario(pagina, url):
+    """Busca el formulario con el campo «folio». Devuelve (dirección de envío, campos ocultos) o None."""
+    for atributos, contenido in _RE_FORM.findall(pagina):
+        entradas = [_atributos(e) for e in _RE_INPUT.findall(contenido)]
+        if any(e.get("name") == "folio" for e in entradas):
+            # action="#" (FAE: un script lo cambia por la misma página) equivale a la página actual.
+            destino = urldefrag(urljoin(url, _atributos(atributos).get("action", "")))[0]
+            ocultos = {e["name"]: e.get("value", "") for e in entradas
+                       if e.get("type", "").lower() == "hidden" and e.get("name")}
+            return destino, ocultos
+    return None
 
 
 def parsear_respuesta(pagina):
@@ -82,8 +138,11 @@ def parsear_respuesta(pagina):
     if m:
         panel = normalizar_clave(_limpiar(m.group(1)))
         datos["estado_portal"] = "invalido" if "INVALID" in panel else "valido" if "VALID" in panel else "?"
-    elif "no hay registro" in pagina.lower():
-        datos["estado_portal"] = "sin_registro"
+        return datos
+    texto = normalizar_clave(_limpiar(pagina))
+    rechazo = next((motivo for frase, motivo in _RECHAZOS.items() if frase in texto), None)
+    if rechazo:
+        datos["estado_portal"], datos["motivo"] = "sin_registro", rechazo
     else:
         datos["estado_portal"] = "?"
     return datos
@@ -92,7 +151,7 @@ def parsear_respuesta(pagina):
 class ClientePortal:
     """Una sesión HTTP (keep-alive) por hilo, reutilizada entre consultas."""
 
-    def __init__(self, cancelado):
+    def __init__(self, url, cancelado):
         import requests
 
         try:  # Usa el almacén de certificados de Windows si está disponible.
@@ -104,6 +163,8 @@ class ClientePortal:
         self._local = threading.local()
         self._sesiones = []
         self._cancelado = cancelado
+        self.url = url
+        self._formulario = None  # (dirección de envío, campos ocultos), si sirve para todas las consultas
 
     def _sesion(self):
         s = getattr(self._local, "s", None)
@@ -114,6 +175,21 @@ class ClientePortal:
             self._sesiones.append(s)
         return s
 
+    def _leer_formulario(self):
+        """
+        `url` puede ser la página que se abre en el navegador o directamente la que recibe el
+        formulario: se lee para saber a dónde se envía y qué campos ocultos lleva. Si trae un token
+        de un solo uso (como el de FAE), se vuelve a leer antes de cada consulta.
+        """
+        r = self._sesion().get(self.url, timeout=TIMEOUT)
+        if r.status_code >= 500:
+            r.raise_for_status()
+        r.encoding = "utf-8"
+        formulario = buscar_formulario(r.text, r.url) or (self.url, {})
+        if not formulario[1]:
+            self._formulario = formulario
+        return formulario
+
     def consultar(self, folio, codigo):
         rq = self._requests
         ultimo = "error desconocido"
@@ -121,21 +197,26 @@ class ClientePortal:
             if self._cancelado.is_set():
                 raise ErrorPortal("cancelado")
             try:
-                r = self._sesion().post(URL_PORTAL, data={"folio": folio, "verificador": codigo}, timeout=TIMEOUT)
-                if r.status_code < 500:
-                    r.raise_for_status()
-                    r.encoding = "utf-8"
-                    datos = parsear_respuesta(r.text)
-                    if datos["estado_portal"] == "?":
-                        raise ErrorPortal("respuesta inesperada del portal (¿cambió la página?)")
-                    return datos
-                ultimo = f"el portal respondió HTTP {r.status_code}"
+                destino, ocultos = self._formulario or self._leer_formulario()
+                r = self._sesion().post(destino, data={**ocultos, "folio": folio, "verificador": codigo},
+                                        timeout=TIMEOUT)
+                r.raise_for_status()
+                r.encoding = "utf-8"
+                datos = parsear_respuesta(r.text)
+                # Un «válido» o «inválido» sin semestre no se puede evaluar: mejor Error que un resultado falso.
+                if datos["estado_portal"] == "?" or (datos["estado_portal"] != "sin_registro"
+                                                     and not (datos.get("semestre") or datos.get("vigencia"))):
+                    raise ErrorPortal("respuesta inesperada del portal (¿la dirección es correcta?)")
+                return datos
             except rq.Timeout:
                 ultimo = "el portal no respondió a tiempo"
             except rq.ConnectionError:
                 ultimo = "sin conexión con el portal"
             except rq.HTTPError as e:
-                raise ErrorPortal(f"el portal respondió HTTP {e.response.status_code}") from e
+                estado_http = e.response.status_code
+                if estado_http < 500:
+                    raise ErrorPortal(f"el portal respondió HTTP {estado_http}") from e
+                ultimo = f"el portal respondió HTTP {estado_http}"
             self._cancelado.wait(0.6 * 2 ** intento)
         raise ErrorPortal(ultimo)
 
@@ -168,7 +249,7 @@ def evaluar(res, datos, rut_pdf, op):
     res.dias = m.group(0) if m else ""
 
     if datos["estado_portal"] == "sin_registro":
-        res.estado, res.detalle = INVALIDO, "El portal no tiene registro de este folio y código"
+        res.estado, res.detalle = INVALIDO, datos["motivo"]
         return res
 
     motivos = []
@@ -206,7 +287,7 @@ def validar(rutas, op, al_avanzar=None, cancelado=None):
     total = len(rutas)
     resultados = [None] * total
     hechos = 0
-    cliente = ClientePortal(cancelado)
+    cliente = ClientePortal(op.url, cancelado)
     listos = queue.SimpleQueue()
     en_vuelo = {}     # (folio, codigo) -> future
     esperando = {}    # future -> [(índice, Resultado, rut_pdf)]
